@@ -5,11 +5,11 @@ class DdcarCrawler():
 
     def __init__(self):
         self.url="https://www.ddcar.com.tw/news/categories/0/%E5%8D%B3%E6%99%82%E6%96%B0%E8%81%9E/list/"
-        self.brand_to_keywords: dict[str,list[str]] = {}  #dict for brand to brand-keyword lookup
-        self.keyword_to_brand : dict[str,str] = {}   #dict for brand-keyword to brand lookup
-        self.all_keywords :list[str] = []  #all brand-keywords, used for quick lookup for articles
+        self.brand_to_keywords: dict[str,list[str]] = {}  #brand → list of associated keywords
+        self.keyword_to_brand : dict[str,str] = {}   #keyword → brand (lowercased for matching)
+        self.all_keywords :list[str] = []  #flattened keyword list for efficient scanning
 
-    #used to ge the soup of the web
+    #Fetch HTML content from DDCAR brand section using requests and BeautifulSoup
     def get_soup(
             self,
     ) -> BeautifulSoup:
@@ -22,15 +22,15 @@ class DdcarCrawler():
             self,
             soup:BeautifulSoup,
     )->None:
-        #select all <a> tags under <li> in ul.brand-list
+        #select all <a> tags under <li> in ul.brand-list, Extract brand names from ul.brand-list li a
         brand_links = soup.select("ul.brand-list li a")
         for link in brand_links:
-            zh_span = link.select_one("span.hidden-xs") ##e.g <span class="hidden-xs">Volvo | 富豪</span>
-            en_span = link.select_one("span.visible-xs")
+            zh_span = link.select_one("span.hidden-xs") #e.g <span class="hidden-xs">Volvo | 富豪</span>
+            en_span = link.select_one("span.visible-xs") 
 
             if zh_span and en_span:
-                en_name = en_span.get_text(strip=True)
-                zh_full = zh_span.get_text(strip=True) #e.g Volvo | 富豪
+                en_name = en_span.get_text(strip=True) #(English name)
+                zh_full = zh_span.get_text(strip=True) #(full string: "Brand | 中文名") e.g Volvo | 富豪
                 if "|" in zh_full:  
                     zh_name = zh_full.split("|")[1].strip()
                     self.brand_to_keywords[en_name] = [en_name,zh_name]
