@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import time
 class DdcarCrawler():
 
     def __init__(self):
@@ -38,7 +39,40 @@ class DdcarCrawler():
                         lower_kw = kw.lower() # 忽略大小寫問題
                         self.keyword_to_brand[lower_kw] = en_name
                         self.all_keywords.append(lower_kw)
-            
+    
+    #loop through pages with public json API and collect article data 
+    def get_ddcar_articles(
+            self,
+            cate_id: int=0,  #the category of article,0 stands for all
+            initial_page:int=1,
+    )->pd.DataFrame:
+        #use ajax joson API to query the article info
+        base_url = "https://www.ddcar.com.tw/api/web/news/categories/articles/list/"
+        articles = []
+        max_pages=1000# Fix-me: how to define max
+        page=initial_page
+
+        while(True and page<=max_pages):
+            params = {"cateId": cate_id, "page": page}
+            response = requests.get(base_url, params=params)
+            data = response.json()
+
+            #acquire the list of articles
+            article_list = data.get("res",[])
+
+            # If no articles, break early
+            if not article_list:
+                break
+
+            for item in article_list:
+                title = item.get("title")   #the article's title
+                url = item.get("url") #the article's link
+                articles.append({"title": title, "url": url})
+            page+=1
+            # Prevent sending requests too fast and hammering the server
+            time.sleep(1)
+
+        return pd.DataFrame(articles)
     
     def run(
             self,
