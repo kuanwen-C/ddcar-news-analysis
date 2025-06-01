@@ -2,6 +2,9 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
+import random
+import os
+import json
 class DdcarCrawler():
 
     def __init__(self):
@@ -40,39 +43,69 @@ class DdcarCrawler():
                         self.keyword_to_brand[lower_kw] = en_name
                         self.all_keywords.append(lower_kw)
     
-    #loop through pages with public json API and collect article data 
     def get_ddcar_articles(
-            self,
-            cate_id: int=0,  #the category of article,0 stands for all
-            initial_page:int=1,
-    )->pd.DataFrame:
-        #use ajax joson API to query the article info
+        self,
+        cate_id: int = 0,   #category id = all articles
+        initial_page: int = 1,
+        max_pages: int = 1000,
+        checkpoint_file: str = "ddcar_checkpoint.json", #used to avoid losing data if crawling fail
+        checkpoint_every: int = 5, #update checkpoint file every 5 pages
+    ) -> pd.DataFrame:
         base_url = "https://www.ddcar.com.tw/api/web/news/categories/articles/list/"
-        articles = []
-        max_pages=1000# Fix-me: how to define max
-        page=initial_page
+        #Add headers to simulate a browser request and avoid being detected as a bo
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
 
-        while(True and page<=max_pages):
+        # Load checkpoint if exists
+        if os.path.exists(checkpoint_file):
+            with open(checkpoint_file, "r", encoding="utf-8") as f:
+                checkpoint = json.load(f)
+                articles = checkpoint.get("articles", [])
+                page = checkpoint.get("last_page", initial_page)
+            print(f"Resuming from page {page}, already collected {len(articles)} articles.")
+        else:
+            articles = []
+            page = initial_page
+
+        while page <= max_pages:
             params = {"cateId": cate_id, "page": page}
-            response = requests.get(base_url, params=params)
-            data = response.json()
+            try:
+                response = requests.get(base_url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                article_list = data.get("res", [])
+            except Exception as e:
+                print(f"---XXX---Crawl fail on page {page}: {e}---XXX---")
+                break
 
-            #acquire the list of articles
-            article_list = data.get("res",[])
-
-            # If no articles, break early
             if not article_list:
+                print("----***---No more articles found. Ending crawl---***---.")
                 break
 
             for item in article_list:
-                title = item.get("title")   #the article's title
-                url = item.get("url") #the article's link
-                articles.append({"title": title, "url": url})
-            page+=1
-            # Prevent sending requests too fast and hammering the server
-            time.sleep(1)
+                articles.append({
+                    "title": item.get("title"),
+                    "url": item.get("url")
+                })
+            
+            #update checkpoint file
+            if page % checkpoint_every == 0:
+                with open(checkpoint_file, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "articles": articles,
+                        "last_page": page + 1
+                    }, f, ensure_ascii=False, indent=2)
+                print(f"---File Updated---Checkpoint saved at page {page} with {len(articles)} articles.---File Updated---")
 
-        return pd.DataFrame(articles)
+            page += 1
+            time.sleep(random.uniform(0.5, 1.5))
+
+        df = pd.DataFrame(articles)
+        #output final crawling result
+        df.to_csv("ddcar_articles.csv", index=False)
+        print(f"---^__^--- All done. Total articles: {len(articles)}. Saved to ddcar_articles.csv ---^__^---")
+        return df
     
     def run(
             self,
